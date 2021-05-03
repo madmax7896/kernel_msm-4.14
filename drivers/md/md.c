@@ -1168,6 +1168,8 @@ static int super_90_validate(struct mddev *mddev, struct md_rdev *rdev)
 			mddev->new_layout = mddev->layout;
 			mddev->new_chunk_sectors = mddev->chunk_sectors;
 		}
+		if (mddev->level == 0)
+			mddev->layout = -1;
 
 		if (sb->state & (1<<MD_SB_CLEAN))
 			mddev->recovery_cp = MaxSector;
@@ -1584,6 +1586,10 @@ static int super_1_load(struct md_rdev *rdev, struct md_rdev *refdev, int minor_
 		rdev->ppl.sector = rdev->sb_start + rdev->ppl.offset;
 	}
 
+	if ((le32_to_cpu(sb->feature_map) & MD_FEATURE_RAID0_LAYOUT) &&
+	    sb->level != 0)
+		return -EINVAL;
+
 	if (!refdev) {
 		ret = 1;
 	} else {
@@ -1693,6 +1699,10 @@ static int super_1_validate(struct mddev *mddev, struct md_rdev *rdev)
 			mddev->new_layout = mddev->layout;
 			mddev->new_chunk_sectors = mddev->chunk_sectors;
 		}
+
+		if (mddev->level == 0 &&
+		    !(le32_to_cpu(sb->feature_map) & MD_FEATURE_RAID0_LAYOUT))
+			mddev->layout = -1;
 
 		if (le32_to_cpu(sb->feature_map) & MD_FEATURE_JOURNAL)
 			set_bit(MD_HAS_JOURNAL, &mddev->flags);
@@ -5380,7 +5390,7 @@ static struct kobject *md_probe(dev_t dev, int *part, void *data)
 	return NULL;
 }
 
-static int add_named_array(const char *val, struct kernel_param *kp)
+static int add_named_array(const char *val, const struct kernel_param *kp)
 {
 	/*
 	 * val must be "md_*" or "mdNNN".
@@ -6757,6 +6767,9 @@ static int set_array_info(struct mddev *mddev, mdu_array_info_t *info)
 	mddev->external	     = 0;
 
 	mddev->layout        = info->layout;
+	if (mddev->level == 0)
+		/* Cannot trust RAID0 layout info here */
+		mddev->layout = -1;
 	mddev->chunk_sectors = info->chunk_size >> 9;
 
 	if (mddev->persistent) {
@@ -7411,7 +7424,8 @@ static int md_open(struct block_device *bdev, fmode_t mode)
 		 */
 		mddev_put(mddev);
 		/* Wait until bdev->bd_disk is definitely gone */
-		flush_workqueue(md_misc_wq);
+		if (work_pending(&mddev->del_work))
+			flush_workqueue(md_misc_wq);
 		/* Then retry the open from the top */
 		return -ERESTARTSYS;
 	}
@@ -9370,11 +9384,11 @@ static __exit void md_exit(void)
 subsys_initcall(md_init);
 module_exit(md_exit)
 
-static int get_ro(char *buffer, struct kernel_param *kp)
+static int get_ro(char *buffer, const struct kernel_param *kp)
 {
 	return sprintf(buffer, "%d", start_readonly);
 }
-static int set_ro(const char *val, struct kernel_param *kp)
+static int set_ro(const char *val, const struct kernel_param *kp)
 {
 	return kstrtouint(val, 10, (unsigned int *)&start_readonly);
 }

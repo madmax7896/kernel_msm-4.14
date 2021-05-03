@@ -625,10 +625,8 @@ static void fat_free_eofblocks(struct inode *inode)
 		 */
 		err = __fat_write_inode(inode, inode_needs_sync(inode));
 		if (err) {
-			fat_msg(inode->i_sb, KERN_WARNING, "Failed to "
-					"update on disk inode for unused "
-					"fallocated blocks, inode could be "
-					"corrupted. Please run fsck");
+			fat_msg_ratelimit(inode->i_sb, KERN_WARNING,
+				"Failed to update on disk inode for unused fallocated blocks, inode could be corrupted. Please run fsck");
 		}
 
 	}
@@ -672,7 +670,7 @@ static void fat_set_state(struct super_block *sb,
 
 	bh = sb_bread(sb, 0);
 	if (bh == NULL) {
-		fat_msg(sb, KERN_ERR, "unable to read boot sector "
+		fat_msg_ratelimit(sb, KERN_ERR, "unable to read boot sector "
 			"to mark fs as dirty");
 		return;
 	}
@@ -858,7 +856,7 @@ retry:
 	fat_get_blknr_offset(sbi, i_pos, &blocknr, &offset);
 	bh = sb_bread(sb, blocknr);
 	if (!bh) {
-		fat_msg(sb, KERN_ERR, "unable to read inode block "
+		fat_msg_ratelimit(sb, KERN_ERR, "unable to read inode block "
 		       "for updating (i_pos %lld)", i_pos);
 		return -EIO;
 	}
@@ -1509,6 +1507,12 @@ static int fat_read_bpb(struct super_block *sb, struct fat_boot_sector *b,
 		if (!silent)
 			fat_msg(sb, KERN_ERR, "bogus sectors per cluster %u",
 				(unsigned)bpb->fat_sec_per_clus);
+		goto out;
+	}
+
+	if (bpb->fat_fat_length == 0 && bpb->fat32_length == 0) {
+		if (!silent)
+			fat_msg(sb, KERN_ERR, "bogus number of FAT sectors");
 		goto out;
 	}
 

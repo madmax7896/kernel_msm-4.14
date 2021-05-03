@@ -262,6 +262,7 @@ static struct in_device *inetdev_init(struct net_device *dev)
 	err = devinet_sysctl_register(in_dev);
 	if (err) {
 		in_dev->dead = 1;
+		neigh_parms_release(&arp_tbl, in_dev->arp_parms);
 		in_dev_put(in_dev);
 		in_dev = NULL;
 		goto out;
@@ -2288,6 +2289,8 @@ static struct devinet_sysctl_table {
 					      "route_localnet"),
 		DEVINET_SYSCTL_FLUSHING_ENTRY(DROP_UNICAST_IN_L2_MULTICAST,
 					      "drop_unicast_in_l2_multicast"),
+		DEVINET_SYSCTL_RW_ENTRY(NF_IPV4_DEFRAG_SKIP,
+					"nf_ipv4_defrag_skip"),
 	},
 };
 
